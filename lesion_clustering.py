@@ -84,6 +84,53 @@ try:
 except Exception:
     HAVE_TORCH = False
 
+
+# ──────────────────────────────────────────────────────────────────────────
+#  Cross-platform safe torch.load
+# ──────────────────────────────────────────────────────────────────────────
+# Checkpoints pickled on Windows can embed pathlib.WindowsPath objects
+# (e.g. saved alongside the weights as part of training args). On Linux /
+# macOS — and especially on Python 3.14 where the check is now strict —
+# unpickling those raises:
+#     NotImplementedError / UnsupportedOperation:
+#         cannot instantiate 'WindowsPath' on your system
+#
+# Fix: while unpickling, temporarily alias WindowsPath -> PureWindowsPath
+# (and PosixPath -> PurePosixPath on Windows) so the objects can be
+# reconstructed as "pure" (non-filesystem) paths. After loading we restore
+# the originals. Pure paths expose the same .name / .stem / str() API, so
+# downstream code that only reads metadata keeps working.
+def _safe_torch_load(path, map_location="cpu"):
+    """
+    Load a torch checkpoint saved on any OS, on any OS.
+    Works around the WindowsPath / PosixPath unpickling error.
+    """
+    import pathlib
+    import sys as _sys
+
+    _orig_windows = pathlib.WindowsPath
+    _orig_posix = pathlib.PosixPath
+
+    if _sys.platform.startswith("win"):
+        # On Windows we can't instantiate PosixPath
+        pathlib.PosixPath = pathlib.PurePosixPath  # type: ignore[misc]
+    else:
+        # On Linux / macOS we can't instantiate WindowsPath
+        pathlib.WindowsPath = pathlib.PureWindowsPath  # type: ignore[misc]
+
+    try:
+        try:
+            ckpt = torch.load(path, map_location=map_location,
+                              weights_only=False)
+        except TypeError:
+            # Older torch versions (<2.0) don't have weights_only kwarg
+            ckpt = torch.load(path, map_location=map_location)
+    finally:
+        pathlib.WindowsPath = _orig_windows  # type: ignore[misc]
+        pathlib.PosixPath = _orig_posix  # type: ignore[misc]
+
+    return ckpt
+
 # ── Constants ──────────────────────────────────────────────────────────────
 MIN_LESION_AREA_PX = 25
 STRATEGIES = ["trained", "classical", "intersection"]
@@ -141,9 +188,16 @@ def segment_leaf_all(img_bgr, model_path=None, img_size=512):
         if _LEAF_MODEL_CACHE["path"] != str(model_path):
             device = "cuda" if torch.cuda.is_available() else "cpu"
             model = build_leaf_model(num_classes=2).to(device)
-            ckpt = torch.load(model_path, map_location=device,
-                              weights_only=False)
-            model.load_state_dict(ckpt["model"])
+            ckpt = _safe_torch_load(model_path, map_location=device)
+            # Checkpoints may be either {"model": state_dict, ...} or a
+            # raw state_dict. Handle both forms defensively.
+            if isinstance(ckpt, dict) and "model" in ckpt:
+                state_dict = ckpt["model"]
+            elif isinstance(ckpt, dict) and "state_dict" in ckpt:
+                state_dict = ckpt["state_dict"]
+            else:
+                state_dict = ckpt
+            model.load_state_dict(state_dict)
             model.eval()
             _LEAF_MODEL_CACHE.update({
                 "model": model, "device": device, "path": str(model_path),
