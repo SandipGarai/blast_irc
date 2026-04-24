@@ -9,4 +9,6 @@ joblib
 Pillow
 torch
 torchvision
+albumentations
+tqdm
 gdown
