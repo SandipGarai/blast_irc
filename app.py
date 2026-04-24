@@ -33,7 +33,28 @@ import sys
 import tempfile
 import traceback
 from pathlib import Path
+import urllib.request
 
+# ── Model auto-download ─────────────────────────────────────────────
+MODEL_URL = "https://drive.google.com/uc?export=download&id=1D5moFE9mvm2fj3wQJwaNUiKelelAI0AH"
+
+MODEL_PATH = Path(__file__).resolve().parent / "models" / "leaf_segmenter_best.pt"
+
+def ensure_model():
+    if not MODEL_PATH.exists():
+        import streamlit as st
+        st.info("Downloading leaf segmentation model... ⏳")
+
+        MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            urllib.request.urlretrieve(MODEL_URL, str(MODEL_PATH))
+            st.success("Model downloaded successfully ✅")
+        except Exception as e:
+            st.error(f"Failed to download model: {e}")
+
+# Call it immediately
+ensure_model()
 import cv2
 import matplotlib
 matplotlib.use("Agg")
