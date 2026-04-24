@@ -1,0 +1,12 @@
+streamlit
+numpy
+pandas
+matplotlib
+opencv-python-headless
+scikit-learn
+scikit-image
+joblib
+Pillow
+torch
+torchvision
+gdown

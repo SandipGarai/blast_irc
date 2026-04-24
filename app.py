@@ -14,9 +14,9 @@ Folder layout expected beside this file
     app.py
     rice_disease_analysis.py
     lesion_clustering.py
-    train_leaf_segmenter.py          ← needed if you have a .pt checkpoint
+    train_leaf_segmenter.py
     models/
-        leaf_segmenter_best.pt       ← optional; classical fallback used if absent
+        leaf_segmenter_best.pt       ← auto-downloaded on first run
         clusters/
             trained/lesion_cluster_model.joblib
             classical/lesion_cluster_model.joblib
@@ -29,10 +29,126 @@ import numpy as np
 from matplotlib.patches import Patch
 import matplotlib.pyplot as plt
 import io
+import os
 import sys
 import tempfile
 import traceback
 from pathlib import Path
+import urllib.request
+
+# ══════════════════════════════════════════════════════════════════════
+#  MODEL AUTO-DOWNLOAD
+# ══════════════════════════════════════════════════════════════════════
+# Recommended: host leaf_segmenter_best.pt as a GitHub Release asset.
+# Example URL:
+#   https://github.com/<user>/<repo>/releases/download/v1.0/leaf_segmenter_best.pt
+#
+# Google Drive also works if you use `gdown` (see requirements.txt).
+MODEL_URL = "https://drive.google.com/uc?id=1D5moFE9mvm2fj3wQJwaNUiKelelAI0AH"
+
+MODEL_PATH = Path(__file__).resolve().parent / "models" / "leaf_segmenter_best.pt"
+
+# Minimum plausible size for a real checkpoint (in bytes).
+# A Google Drive "virus scan warning" HTML page is typically < 100 KB.
+MIN_MODEL_BYTES = 1_000_000  # 1 MB
+
+
+def _looks_like_torch_checkpoint(path: Path) -> bool:
+    """
+    Quick sanity check: real .pt files are either ZIP archives (new format,
+    magic 'PK\\x03\\x04') or legacy pickle (magic '\\x80\\x02' or similar).
+    HTML error pages start with '<' or whitespace-then-'<'.
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(8)
+        if head.startswith(b"PK\x03\x04"):   # torch>=1.6 zip format
+            return True
+        if head.startswith(b"\x80"):         # legacy pickle
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def _download_with_gdown(url: str, dest: Path) -> bool:
+    """Try gdown if available (handles Google Drive confirmation pages)."""
+    try:
+        import gdown
+    except ImportError:
+        return False
+    try:
+        gdown.download(url, str(dest), quiet=True, fuzzy=True)
+        return dest.exists()
+    except Exception:
+        return False
+
+
+def _download_with_urllib(url: str, dest: Path) -> bool:
+    try:
+        urllib.request.urlretrieve(url, str(dest))
+        return dest.exists()
+    except Exception:
+        return False
+
+
+def ensure_model():
+    """
+    Download leaf_segmenter_best.pt on first run if it is not already present.
+    Validates that the download is a real PyTorch checkpoint (not an HTML
+    error page). If the file is bad, removes it so the classical fallback
+    kicks in cleanly.
+    """
+    if MODEL_PATH.exists() and _looks_like_torch_checkpoint(MODEL_PATH):
+        return  # already good
+
+    # Remove any previous broken attempt
+    if MODEL_PATH.exists():
+        try:
+            MODEL_PATH.unlink()
+        except OSError:
+            pass
+
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    with st.spinner("Downloading leaf segmentation model (first run only)…"):
+        # Prefer gdown for Google Drive links; fall back to urllib
+        ok = False
+        if "drive.google.com" in MODEL_URL or "docs.google.com" in MODEL_URL:
+            ok = _download_with_gdown(MODEL_URL, MODEL_PATH)
+            if not ok:
+                ok = _download_with_urllib(MODEL_URL, MODEL_PATH)
+        else:
+            ok = _download_with_urllib(MODEL_URL, MODEL_PATH)
+
+        # Validate
+        if ok and MODEL_PATH.exists():
+            size = MODEL_PATH.stat().st_size
+            if size < MIN_MODEL_BYTES or not _looks_like_torch_checkpoint(MODEL_PATH):
+                # Most likely an HTML virus-scan page from Google Drive
+                try:
+                    MODEL_PATH.unlink()
+                except OSError:
+                    pass
+                st.warning(
+                    f"Downloaded file does not look like a valid PyTorch "
+                    f"checkpoint (size={size:,} bytes). The app will use the "
+                    f"classical segmentation fallback.\n\n"
+                    f"**Fix:** host the .pt as a GitHub Release asset and update "
+                    f"`MODEL_URL` in app.py, or add `gdown` to requirements.txt "
+                    f"if using Google Drive."
+                )
+                return
+            st.success(f"Model downloaded ({size / 1e6:.1f} MB) ✓")
+        else:
+            st.warning(
+                "Could not download the segmentation model. "
+                "The app will use the classical segmentation fallback."
+            )
+
+
+# Call it immediately (before any matplotlib/cv2 imports do heavy work)
+ensure_model()
 
 import cv2
 import matplotlib
