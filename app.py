@@ -44,8 +44,8 @@ import urllib.request
 #   https://github.com/<user>/<repo>/releases/download/v1.0/leaf_segmenter_best.pt
 #
 # Google Drive also works if you use `gdown` (see requirements.txt).
-MODEL_URL = "https://drive.google.com/uc?id=1D5moFE9mvm2fj3wQJwaNUiKelelAI0AH"
-
+# MODEL_URL = "https://drive.google.com/uc?id=1D5moFE9mvm2fj3wQJwaNUiKelelAI0AH"
+MODEL_URL = "https://github.com/SandipGarai/blast_irc/releases/download/v1.0/leaf_segmenter_best.pt"
 MODEL_PATH = Path(__file__).resolve().parent / "models" / "leaf_segmenter_best.pt"
 
 # Minimum plausible size for a real checkpoint (in bytes).
