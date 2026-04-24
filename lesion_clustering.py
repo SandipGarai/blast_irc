@@ -141,45 +141,24 @@ def segment_leaf_all(img_bgr, model_path=None, img_size=512):
         if _LEAF_MODEL_CACHE["path"] != str(model_path):
             device = "cuda" if torch.cuda.is_available() else "cpu"
             model = build_leaf_model(num_classes=2).to(device)
-
-            import pathlib
-            import platform
-            _patched = False
-            if platform.system() != "Windows":
-                _orig_wp = pathlib.WindowsPath
-                pathlib.WindowsPath = pathlib.PosixPath
-                _patched = True
-
-            try:
-                ckpt = torch.load(model_path, map_location=device,
-                                  weights_only=False)
-            finally:
-                if _patched:
-                    pathlib.WindowsPath = _orig_wp
-
+            ckpt = torch.load(model_path, map_location=device,
+                              weights_only=False)
             model.load_state_dict(ckpt["model"])
             model.eval()
-
             _LEAF_MODEL_CACHE.update({
-                "model": model,
-                "device": device,
-                "path": str(model_path),
+                "model": model, "device": device, "path": str(model_path),
                 "tf": build_transforms(img_size, train=False),
             })
-
         model = _LEAF_MODEL_CACHE["model"]
         tf = _LEAF_MODEL_CACHE["tf"]
         device = _LEAF_MODEL_CACHE["device"]
-
         rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         H, W = rgb.shape[:2]
         dummy = np.zeros((H, W), np.uint8)
         tensor = tf(image=rgb, mask=dummy)["image"].unsqueeze(0).to(device)
-
         with torch.no_grad():
             logits = model(tensor)["out"]
             pred_small = logits.argmax(1)[0].cpu().numpy().astype(np.uint8)
-
         trained_mask = cv2.resize(pred_small, (W, H),
                                   interpolation=cv2.INTER_NEAREST) * 255
         trained_src = "trained_segmenter"
