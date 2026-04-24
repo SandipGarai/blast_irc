@@ -138,33 +138,34 @@ def segment_leaf_all(img_bgr, model_path=None, img_size=512):
     trained_src = "trained_unavailable"
 
     if model_path and HAVE_TORCH and Path(model_path).exists():
-    if _LEAF_MODEL_CACHE["path"] != str(model_path):
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        model = build_leaf_model(num_classes=2).to(device)
+        if _LEAF_MODEL_CACHE["path"] != str(model_path):
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model = build_leaf_model(num_classes=2).to(device)
 
-        # Cross-platform checkpoint load: checkpoints pickled on Windows
-        # contain WindowsPath objects that can't be unpickled on Linux.
-        # Temporarily alias WindowsPath → PosixPath for the duration of
-        # the torch.load() call only.
-        import pathlib, platform
-        _patched = False
-        if platform.system() != "Windows":
-            _orig_wp = pathlib.WindowsPath
-            pathlib.WindowsPath = pathlib.PosixPath
-            _patched = True
-        try:
-            ckpt = torch.load(model_path, map_location=device,
-                              weights_only=False)
-        finally:
-            if _patched:
-                pathlib.WindowsPath = _orig_wp
+            # Cross-platform checkpoint load: checkpoints pickled on Windows
+            # contain WindowsPath objects that can't be unpickled on Linux.
+            # Temporarily alias WindowsPath → PosixPath for the duration of
+            # the torch.load() call only.
+            import pathlib
+            import platform
+            _patched = False
+            if platform.system() != "Windows":
+                _orig_wp = pathlib.WindowsPath
+                pathlib.WindowsPath = pathlib.PosixPath
+                _patched = True
+            try:
+                ckpt = torch.load(model_path, map_location=device,
+                                  weights_only=False)
+            finally:
+                if _patched:
+                    pathlib.WindowsPath = _orig_wp
 
-        model.load_state_dict(ckpt["model"])
-            model.eval()
-            _LEAF_MODEL_CACHE.update({
-                "model": model, "device": device, "path": str(model_path),
-                "tf": build_transforms(img_size, train=False),
-            })
+            model.load_state_dict(ckpt["model"])
+        model.eval()
+        _LEAF_MODEL_CACHE.update({
+            "model": model, "device": device, "path": str(model_path),
+            "tf": build_transforms(img_size, train=False),
+        })
         model = _LEAF_MODEL_CACHE["model"]
         tf = _LEAF_MODEL_CACHE["tf"]
         device = _LEAF_MODEL_CACHE["device"]
